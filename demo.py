@@ -29,6 +29,8 @@ def main(
     source_file: str = "vocals.wav",
     output_path: str = "output.wav",
     duration: float = None,
+    skip_wiener: bool = False,
+    skip_reverse_channel: bool = False,
     verbose: int = 1,
 ):
     verbose = bool(verbose)
@@ -41,12 +43,24 @@ def main(
     print("Aligning...")
     mix, source = align(mix, source, fs=fs, verbose=verbose)
     print("Subtracting...")
-    source = reverse_channel(mix, source)
+    if not skip_reverse_channel:
+        source = reverse_channel(mix, source)
+    else:
+        print("Skipping reverse channel correction")
     mix, source = pad(mix, source)
-    print("Enhancing...")
-    subtracted = wiener_enhance(mix - source, source, verbose=verbose)
+
+    if skip_wiener:
+        print("Skipping Wiener enhancement (raw subtraction)...")
+        subtracted = mix - source
+    else:
+        print("Enhancing...")
+        subtracted = wiener_enhance(mix - source, source, verbose=verbose)
 
     subtracted = np.array(subtracted)
+
+    peak = np.abs(subtracted).max()
+    print(f"Output peak level: {peak:.2f} ({20 * np.log10(peak):.2f} dB)")
+
     wavfile.write(output_path, fs, subtracted.T)
 
 

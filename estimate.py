@@ -608,6 +608,7 @@ def align(
     hop: float = 0.2,
     max_local_offset: float = 0.1,
     batch_size: int = 128,
+    skip_local_offsets: bool = False,
     verbose: bool = False,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
@@ -644,6 +645,7 @@ def align(
             correlation_size=int(correlation_size * fs),
         )
         err.throw()
+        print(f"Global offset detected: {offset} samples ({offset/fs:.4f} seconds)")
         if offset < 0:
             a = jnp.append(jnp.zeros((C, -offset), dtype=a.dtype), a, axis=1)
         elif offset > 0:
@@ -683,25 +685,35 @@ def align(
             fs_ratio,
             verbose=verbose,
         )
-        b = jnp.array(
-            librosa.resample(np.array(b), orig_sr=1, target_sr=fs_ratio),
-            dtype=jnp.float64,
-        )
+        print(f"Sample rate ratio detected: {fs_ratio:.6f} ({(fs_ratio-1)*100:.4f}% skew)")
+
+        skew_threshold = 0.0001
+        if abs(fs_ratio - 1.0) < skew_threshold:
+            print(f"Skew below threshold ({skew_threshold*100:.2f}%), skipping resample to avoid artifacts")
+        else:
+            print(f"Applying sample rate correction...")
+            b = jnp.array(
+                librosa.resample(np.array(b), orig_sr=1, target_sr=fs_ratio),
+                dtype=jnp.float64,
+            )
 
     # Estimate offset locations every "hop" seconds
-    offset_locations, offsets = get_local_offsets(
-        a,
-        b,
-        int(fs * hop),
-        int(fs * max_local_offset),
-        int(fs * correlation_size),
-        batch_size=batch_size,
-    )
+    if skip_local_offsets:
+        print("Skipping local offset correction")
+    else:
+        offset_locations, offsets = get_local_offsets(
+            a,
+            b,
+            int(fs * hop),
+            int(fs * max_local_offset),
+            int(fs * correlation_size),
+            batch_size=batch_size,
+        )
 
-    # Remove any big jumps in the offset list
-    offsets = remove_outliers(offsets)
-    # Adjust source according to these offsets
-    b = apply_offsets_resample(b, offset_locations, offsets, verbose=verbose)
+        # Remove any big jumps in the offset list
+        offsets = remove_outliers(offsets)
+        # Adjust source according to these offsets
+        b = apply_offsets_resample(b, offset_locations, offsets, verbose=verbose)
 
     # Make sure they are the same length
     a, b = pad(a, b)

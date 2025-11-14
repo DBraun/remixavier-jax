@@ -27,12 +27,30 @@ python3 demo.py --help
 
 ## Notes
 
-### GPU Memory Issues
+### Working with Official Stems
 
-If you encounter CUDA out-of-memory errors, you can reduce the chunk size (default: `2**13` = 8192) to lower GPU memory usage:
+For official artist-released stems, use `--skip_reverse_channel` to avoid over-correction:
 
 ```bash
-python3 demo.py --mix_file="mixture.wav" --source_file="vocals.wav" --output_path="instrumental.wav" --align_over_window.chunk_size=4096
+python3 demo.py \
+  --mix_file="full_mix.mp3" \
+  --source_file="instrumental.mp3" \
+  --output_path="vocals.wav" \
+  --skip_reverse_channel \
+  --align_over_window.chunk_size=2048
+```
+
+The algorithm automatically:
+- Skips sample rate correction if skew < 0.01% (reduces artifacts)
+- Detects and corrects global timing offset
+- Applies local offset corrections for timing drift
+
+### GPU Memory Issues
+
+If you encounter CUDA out-of-memory errors, you can reduce the chunk size (default: `2**12` = 4096) to lower GPU memory usage:
+
+```bash
+python3 demo.py --mix_file="mixture.wav" --source_file="vocals.wav" --output_path="instrumental.wav" --align_over_window.chunk_size=2048
 ```
 
 Smaller chunk sizes use less GPU memory but process more slowly. Always use a power of 2.
