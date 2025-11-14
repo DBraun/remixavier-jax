@@ -15,6 +15,7 @@ from jax import numpy as jnp
 from jax.scipy.optimize import minimize
 from jax.scipy.signal import fftconvolve
 from jax.experimental import checkify
+import argbind
 import audiotree.resample
 import librosa
 from librosax import stft, istft, amplitude_to_db
@@ -95,9 +96,9 @@ def stft_in_batches(
     hop_length: int = 512,
     win_length: int = None,
     window: str = "hann",
-    chunk_size: int = 2**12,
+    chunk_size: int = 2**13,
     dtype=jnp.complex128,
-    verbose=True,
+    verbose: bool = True,
 ):
     """
     Compute librosa-style STFT (center=True, zero-padded) in batches to reduce GPU memory usage, while allowing custom
@@ -184,6 +185,7 @@ def stft_in_batches(
 
 
 @checkify.checkify
+@argbind.bind()
 def align_over_window(
     a: jnp.ndarray,
     b: jnp.ndarray,
@@ -266,6 +268,7 @@ def get_best_fs_ratio(
     max_offset: int,
     correlation_size: int,
     center: float = 1,
+    verbose: bool = False,
 ) -> float:
     """
     Given two signals with components in common, tries to estimate the clock drift and offset of b vs a
@@ -278,6 +281,7 @@ def get_best_fs_ratio(
         max_offset (int): Maximum expected offset of the signals
         correlation_size (int): Number of samples to use in each correlate
         center (float): Ratio to deviate from - default 1
+        verbose: Verbosity, default False
 
     Returns:
         float: fs ratio to make ``b`` line up well with ``a``
@@ -289,7 +293,7 @@ def get_best_fs_ratio(
     fs_ratios = fs_ratios.tolist()
     # The max correlation value for each fs ratio
     corr_max = []
-    for n, ratio in enumerate(tqdm.tqdm(fs_ratios, desc="FS Ratios")):
+    for n, ratio in enumerate(tqdm.tqdm(fs_ratios, desc="FS Ratios", disable=not verbose)):
         b_resampled = jnp.array(
             librosa.resample(b, orig_sr=1.0, target_sr=ratio), dtype=jnp.float64
         )
@@ -304,7 +308,7 @@ def get_best_fs_ratio(
 
 
 def apply_offsets_resample(
-    b: jnp.ndarray, offset_locations: jnp.ndarray, offsets: jnp.ndarray
+    b: jnp.ndarray, offset_locations: jnp.ndarray, offsets: jnp.ndarray, verbose: bool = False,
 ):
     """
     Adjust a signal b according to local offset estimations using resampling
@@ -313,6 +317,7 @@ def apply_offsets_resample(
         b (jnp.ndarray): Some signal
         offset_locations (jnp.ndarray): Locations, in samples, of each local offset estimation
         offsets (jnp.ndarray): Local offset for the corresponding sample in offset_locations
+        verbose: Verbosity, default False
 
     Returns:
         jnp.array: ``b`` with offsets applied
@@ -331,7 +336,7 @@ def apply_offsets_resample(
     offsets = jnp.concatenate([offsets, offsets[-1:]])
 
     current = 0
-    for n, offset in enumerate(tqdm.tqdm(offsets, desc="Apply Offsets")):
+    for n, offset in enumerate(tqdm.tqdm(offsets, desc="Apply Offsets", disable=not verbose)):
         start = int(offset_locations[n])
         end = int(offset_locations[n + 1])
         # Compute the necessary resampling ratio to compensate for this offset
@@ -533,12 +538,14 @@ def remove_outliers(x: jnp.ndarray, median_size: int = 13) -> jnp.ndarray:
     return x
 
 
+@argbind.bind()
 def wiener_enhance(
     target: jnp.ndarray,
     accomp: jnp.ndarray,
     thresh: float = -6,
     transit: float = 3,
     n_fft: int = 2048,
+    verbose: bool = False,
 ):
     """
     Given a noisy signal and a signal which approximates the noise, try to remove the noise.
@@ -548,13 +555,14 @@ def wiener_enhance(
         accomp (jnp.ndarray): Approximate noise
         thresh (float): Sigmoid threshold, default -6
         transit (float): Sigmoid transition, default 3
-        n_fft (int): FFT length, default 2048 (hop is always n_fft/4)
+        n_fft (int): FFT length, default 2048 (hop is always n_fft/
+        verbose: Verbose mode, default False
 
     Returns:
         jnp.ndarray: ``target`` after wiener filter that tried to remove noise.
     """
     target_spec, accomp_spec = stft_in_batches(
-        jnp.stack([target, accomp], axis=0), n_fft=n_fft, hop_length=n_fft // 4
+        jnp.stack([target, accomp], axis=0), n_fft=n_fft, hop_length=n_fft // 4, verbose=verbose,
     )
 
     spec_ratio = amplitude_to_db(jnp.abs(target_spec)) - amplitude_to_db(jnp.abs(accomp_spec))  # fmt: skip
@@ -588,6 +596,7 @@ def pad(a: jnp.ndarray, b: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
     return a, b
 
 
+@argbind.bind()
 def align(
     a: jnp.ndarray,
     b: jnp.ndarray,
@@ -599,6 +608,7 @@ def align(
     hop: float = 0.2,
     max_local_offset: float = 0.1,
     batch_size: int = 128,
+    verbose: bool = False,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Aligns signal ``b`` to ``a`` by fixing global offset, finding optimal resampling rate and fixing local offsets.
@@ -614,6 +624,7 @@ def align(
         hop (float): Time, in seconds, between successive offset estimations, default .2
         max_local_offset (float): Maximum offset in seconds for local each offset estimation, default .1
         batch_size (int): Batch size
+        verbose: Verbosity with tqdm
 
     Returns:
         - a_aligned : np.ndarray
@@ -657,6 +668,7 @@ def align(
                 200,
                 int(max_skew_offset * fs_ds),
                 int(correlation_size * fs_ds),
+                verbose=verbose,
             )
         else:
             fs_ratio = 1.0
@@ -669,6 +681,7 @@ def align(
             int(max_skew_offset * fs_ds),
             int(correlation_size * fs_ds),
             fs_ratio,
+            verbose=verbose,
         )
         b = jnp.array(
             librosa.resample(np.array(b), orig_sr=1, target_sr=fs_ratio),
@@ -688,7 +701,7 @@ def align(
     # Remove any big jumps in the offset list
     offsets = remove_outliers(offsets)
     # Adjust source according to these offsets
-    b = apply_offsets_resample(b, offset_locations, offsets)
+    b = apply_offsets_resample(b, offset_locations, offsets, verbose=verbose)
 
     # Make sure they are the same length
     a, b = pad(a, b)

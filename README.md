@@ -15,11 +15,24 @@ pip3 install -r requirements.txt
 
 ## Demo:
 
+Basic usage:
 ```bash
-python3 demo.py --mix_file="mixture.wav" --source_file="vocals.wav" --duration=10.0
+python3 demo.py --mix_file="mixture.wav" --source_file="vocals.wav" --output_path="instrumental.wav" --duration=10.0
 ```
 
 Help:
 ```bash
 python3 demo.py --help
 ```
+
+## Notes
+
+### GPU Memory Issues
+
+If you encounter CUDA out-of-memory errors, you can reduce the chunk size (default: `2**13` = 8192) to lower GPU memory usage:
+
+```bash
+python3 demo.py --mix_file="mixture.wav" --source_file="vocals.wav" --output_path="instrumental.wav" --align_over_window.chunk_size=4096
+```
+
+Smaller chunk sizes use less GPU memory but process more slowly. Always use a power of 2.
