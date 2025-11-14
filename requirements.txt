@@ -1,6 +1,6 @@
 argbind @ git+https://github.com/DBraun/argbind.git@improve.subclasses
 audiotree>=0.2.1
-jaxloudnorm @ git+https://github.com/boris-kuz/jaxloudnorm.git
+jaxloudnorm
 librosa
 librosax
 numpy
