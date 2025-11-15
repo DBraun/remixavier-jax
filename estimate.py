@@ -731,6 +731,17 @@ def reverse_channel(
     """
     Estimates the channel distortion in b relative to a and reverses it
 
+    WARNING: This JAX implementation has known issues:
+    - Uses unbounded BFGS optimization instead of bounded L-BFGS-B (original)
+    - JAX's 'l-bfgs-experimental' doesn't work well for this case
+    - Can produce extreme filter coefficients causing artifacts or silence
+    - NOT recommended for official stems (use --skip_reverse_channel)
+    - Only use for user-recorded stems with actual channel distortion
+
+    The original numpy implementation uses scipy's L-BFGS-B with bounds
+    [(-1e100, 1e100), (-1e100, 1e100)] which keeps filter coefficients stable.
+    JAX's minimize() doesn't support bounds parameter.
+
     Args:
         a (jnp.ndarray): Some signal
         b (jnp.ndarray): Some other signal with channel distortion relative to a

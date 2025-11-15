@@ -30,7 +30,7 @@ def main(
     output_path: str = "output.wav",
     duration: float = None,
     skip_wiener: bool = False,
-    skip_reverse_channel: bool = False,
+    apply_reverse_channel: bool = False,  # Default False due to JAX BFGS issues
     verbose: int = 1,
 ):
     verbose = bool(verbose)
@@ -43,10 +43,12 @@ def main(
     print("Aligning...")
     mix, source = align(mix, source, fs=fs, verbose=verbose)
     print("Subtracting...")
-    if not skip_reverse_channel:
+    if apply_reverse_channel:
+        print("Applying reverse channel correction")
+        print("WARNING: reverse_channel uses unbounded BFGS and may cause artifacts")
         source = reverse_channel(mix, source)
     else:
-        print("Skipping reverse channel correction")
+        print("Skipping reverse channel correction (recommended for official stems)")
     mix, source = pad(mix, source)
 
     if skip_wiener:

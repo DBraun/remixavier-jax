@@ -29,21 +29,24 @@ python3 demo.py --help
 
 ### Working with Official Stems
 
-For official artist-released stems, use `--skip_reverse_channel` to avoid over-correction:
+For official artist-released stems, the default settings work best:
 
 ```bash
 python3 demo.py \
-  --mix_file="full_mix.mp3" \
-  --source_file="instrumental.mp3" \
-  --output_path="vocals.wav" \
-  --skip_reverse_channel \
-  --align_over_window.chunk_size=2048
+  --mix_file="full_mix.flac" \
+  --source_file="instrumental.flac" \
+  --output_path="vocals.wav"
 ```
+
+**Note**: `reverse_channel` correction is **disabled by default** due to a known issue in the JAX port. The original uses bounded L-BFGS-B optimization, but JAX's `minimize()` doesn't support bounds, causing unbounded BFGS to produce extreme filter coefficients and artifacts.
+
+Only enable reverse_channel (`--apply_reverse_channel`) if you have user-recorded stems with actual channel distortion (different EQ/compression between stems).
 
 The algorithm automatically:
 - Skips sample rate correction if skew < 0.01% (reduces artifacts)
 - Detects and corrects global timing offset
 - Applies local offset corrections for timing drift
+- Skips reverse_channel by default (prevents JAX BFGS artifacts)
 
 ### GPU Memory Issues
 
