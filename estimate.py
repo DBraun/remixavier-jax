@@ -1,6 +1,24 @@
 """
 This is a JAX port of Colin Raffel and Dan Ellis's Remixavier:
 Functions for aligning and approximately removing channel distortion in signals with related content.
+
+KNOWN ISSUES vs Original Implementation:
+
+1. Mono vs Multi-Channel Processing:
+   - Original processes each channel independently (returns per-channel offsets)
+   - This port converts to mono in align_over_window and other functions
+   - Loses per-channel timing information for multi-channel sources
+   - Usually acceptable for well-aligned official stems
+
+2. Unbounded BFGS Optimization in reverse_channel:
+   - Original uses scipy's L-BFGS-B with bounds [(-1e100, 1e100)]
+   - JAX's minimize() doesn't support bounds, uses unbounded BFGS
+   - Causes extreme filter coefficients for official stems (peaks of 4000+)
+   - WORKAROUND: reverse_channel is disabled by default (use --apply_reverse_channel to enable)
+
+For official stems, use default settings (reverse_channel disabled). The port works well for
+basic alignment and subtraction, but reverse_channel should only be used for user-recorded
+stems with actual channel distortion.
 """
 
 from functools import partial
@@ -214,7 +232,11 @@ def align_over_window(
     """
     assert a.ndim == 2 and b.ndim == 2
 
-    # Convert both to mono
+    # ISSUE: Convert both to mono - loses per-channel alignment information
+    # The original implementation processes each channel separately and returns per-channel offsets.
+    # This JAX port converts to mono and returns a single scalar offset applied to all channels.
+    # For well-aligned official stems this is usually fine, but for multi-channel recordings
+    # with independent channel drift, this loses information.
     a = jnp.mean(a, axis=0)
     b = jnp.mean(b, axis=0)
 
@@ -455,9 +477,13 @@ def mult_by_best_filter_coefficients(M: jnp.ndarray, R: jnp.ndarray) -> jnp.ndar
                 )
             ).sum()
 
-        # Note: The original numpy remixavier used "L-BFGS-B",
-        #  and jax.scipy does have "l-bfgs-experimental-do-not-rely-on-this",
-        #  but it doesn't work well for this case.
+        # ISSUE: Using unbounded BFGS instead of bounded L-BFGS-B
+        # The original uses: scipy.optimize.minimize(..., method='L-BFGS-B', bounds=[(-1e100, 1e100), (-1e100, 1e100)])
+        # JAX's minimize() doesn't support bounds parameter, causing optimization to find extreme values.
+        # The experimental L-BFGS ('l-bfgs-experimental-do-not-rely-on-this') exists but doesn't work well here.
+        # For official stems (no actual channel distortion), this produces filter coefficients with extreme
+        # magnitudes (thousands), causing peaks of 4000+ or complete silence in the output.
+        # Workaround: Use --apply_reverse_channel flag to skip this function for official stems.
         method = "BFGS"
 
         out = minimize(
